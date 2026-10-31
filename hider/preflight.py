@@ -13,7 +13,7 @@ from .wintypes_ext import (
     FILE_ATTRIBUTE_RECALL_ON_OPEN,
     FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_SHARE_DELETE,
+    FILE_SHARE_ALL,
     FILE_SHARE_NONE,
     INVALID_FILE_ATTRIBUTES,
     INVALID_HANDLE_VALUE,
@@ -59,12 +59,13 @@ def is_locked(path: Path) -> bool:
 def can_write_and_delete(path: Path) -> bool:
     """
     Check that we can open the path for DELETE access (basic deletability check).
-    Uses FILE_SHARE_DELETE so other holders that allow deletion are not blocked.
-    Replaces the owner-SID check (which failed for Administrators-owned files).
+    Uses FILE_SHARE_ALL (READ | WRITE | DELETE) so other background readers
+    (such as Explorer watching directory changes) are not blocked and do not
+    cause false-positive sharing violations.
     """
     flags = FILE_FLAG_BACKUP_SEMANTICS if path.is_dir() else 0
     h = _k32.CreateFileW(
-        _w(path), DELETE, FILE_SHARE_DELETE,
+        _w(path), DELETE, FILE_SHARE_ALL,
         None, OPEN_EXISTING, flags, None
     )
     if h == INVALID_HANDLE_VALUE:
