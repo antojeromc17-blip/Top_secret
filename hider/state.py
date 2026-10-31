@@ -164,7 +164,13 @@ def add_to_user_path() -> None:
     import ctypes
     import winreg
 
-    exe_dir = str(Path(sys.executable).parent.resolve())
+    if getattr(sys, "frozen", False):
+        install_dir = Path(sys.executable).parent.resolve()
+    else:
+        # Cloned repository root containing hider.cmd / main.py
+        install_dir = Path(__file__).parent.parent.resolve()
+
+    exe_dir = str(install_dir)
 
     key = winreg.OpenKey(
         winreg.HKEY_CURRENT_USER, "Environment", 0,
