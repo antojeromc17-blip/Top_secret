@@ -153,12 +153,15 @@ def test_recover_without_state_dir(tmp_path: Path):
 
 # ── Recover with index deleted ────────────────────────────────────────────────
 
-def test_recover_with_missing_index(tmp_path: Path):
+def test_recover_with_missing_index(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     The index file is absent.  list_vaults must return empty list.
     recover_cmd scans vault roots directly and does not depend on the index.
     """
-    from hider.index import list_vaults, rebuild_index
+    import hider.index as idx_mod
+    monkeypatch.setattr(idx_mod, "index_path", lambda: tmp_path / "missing_index")
+
+    from hider.index import list_vaults
     pubkey_raw, privkey_enc = generate_keypair("pw")
     privkey_raw = unwrap_privkey(privkey_enc, "pw")
 
