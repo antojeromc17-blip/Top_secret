@@ -690,14 +690,8 @@ def change_passphrase(old_passphrase: str, new_passphrase: str) -> None:
                     acl_removed = True
 
                     data = mf.read_bytes()
-                    _, _, hdr_len = parse_manifest_header(data)
-                    ecies_body = data[hdr_len:]
-
-                    # Rebuild header with new privkey_enc; ECIES body unchanged
-                    new_header = __import__(
-                        "hider.crypto", fromlist=["build_manifest_header"]
-                    ).build_manifest_header(pubkey_raw, privkey_enc_new)
-                    new_data = new_header + ecies_body
+                    body_json, _ = decrypt_manifest(data, old_passphrase)
+                    new_data = encrypt_manifest(pubkey_raw, privkey_enc_new, body_json)
 
                     # Atomic write (fix C5: tmp → rename, then restore ACL)
                     tmp = mf.with_suffix(".tmp")

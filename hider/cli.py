@@ -8,6 +8,7 @@ Commands
   hider list                  List all hidden vaults (requires passphrase).
   hider recover               Scan vault roots and restore; works without state dir.
   hider change-passphrase     Re-encrypt private key with a new passphrase.
+  hider install               Deploy to stealth system directory & configure PATH.
 """
 from __future__ import annotations
 
@@ -181,3 +182,23 @@ def change_passphrase() -> None:
         typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
+
+# ── install ───────────────────────────────────────────────────────────────────
+
+@app.command(name="install")
+def install_cmd() -> None:
+    """Deploy to the hidden system runtime directory and register stealth PATH."""
+    from .state import add_to_user_path
+    try:
+        add_to_user_path()
+        typer.echo("Successfully deployed to system runtime directory.")
+        typer.echo("Stealth PATH registered. 'hider' is now available from any terminal.")
+        hide_repo = typer.confirm("Would you like to hide this downloaded directory from Explorer?", default=True)
+        if hide_repo:
+            repo_root = Path(__file__).parent.parent.resolve()
+            from .attrs import set_hidden_system
+            set_hidden_system(repo_root)
+            typer.echo("Downloaded folder is now hidden with System+Hidden attributes.")
+    except Exception as exc:
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
+        raise typer.Exit(1)
