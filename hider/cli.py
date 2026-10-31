@@ -27,6 +27,14 @@ app = typer.Typer(
 MAX_ATTEMPTS = 5
 
 
+def _format_error(exc: Exception) -> str:
+    from cryptography.exceptions import InvalidTag
+    msg = str(exc).strip()
+    if isinstance(exc, InvalidTag) or not msg:
+        return "Incorrect passphrase or authentication failed."
+    return msg
+
+
 def _prompt_passphrase(prompt: str = "Passphrase") -> str:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
@@ -85,7 +93,7 @@ def hide(
         typer.echo(f"Cannot hide: {exc}", err=True)
         raise typer.Exit(1)
     except Exception as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
 
@@ -111,7 +119,7 @@ def unhide(
         else:
             typer.echo(f"Done. Restored {count} vault(s).")
     except Exception as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
 
@@ -131,7 +139,7 @@ def list_cmd() -> None:
     try:
         list_vaults_cmd(passphrase)
     except Exception as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
 
@@ -149,7 +157,7 @@ def recover() -> None:
     try:
         recover_cmd(passphrase)
     except Exception as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
 
@@ -170,6 +178,6 @@ def change_passphrase() -> None:
     try:
         _change_pp(old_pw, new_pw)
     except Exception as exc:
-        typer.echo(f"Error: {exc}", err=True)
+        typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
 
