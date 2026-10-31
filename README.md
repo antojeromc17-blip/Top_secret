@@ -1,4 +1,4 @@
-# HIDER (bro)
+# HIDER
 
 HIDER is a Windows utility that hides folders so they leave no visible trace, directions, or plaintext metadata on disk.
 
@@ -80,25 +80,25 @@ The test suite covers:
 
 ## Usage Commands
 
-Once installed or running from this folder, you can use the `bro` command:
+Once installed or running from this folder, you can use the `hider` command:
 
 ```powershell
 # 1. Hide a folder (asks for passphrase once on initial run):
-bro hide "C:\Users\Username\Desktop\MySecretPhotos"
+hider hide "C:\Users\Username\Desktop\MySecretPhotos"
 
 # 2. Unhide vaults (restores original folder name, files, and attributes):
-bro unhide
+hider unhide
 # Or unhide a specific folder matching text:
-bro unhide MySecretPhotos
+hider unhide MySecretPhotos
 
 # 3. List all currently hidden vaults:
-bro list
+hider list
 
 # 4. Change secret key / passphrase across all vaults:
-bro change-key
+hider change-passphrase
 
 # 5. Emergency recover (scans drives even if local app data was wiped):
-bro recover
+hider recover
 ```
 
 ---
@@ -109,10 +109,10 @@ To compile self-contained Windows distributions:
 
 ```powershell
 # Build onedir release (recommended — faster startup, minimal AV false positives):
-pyinstaller --onedir --name bro main.py
+pyinstaller --onedir --name hider main.py
 
 # Build single-file executable:
-pyinstaller --onefile --name bro_onefile main.py
+pyinstaller --onefile --name hider_onefile main.py
 ```
 
 Outputs will be placed in the `dist/` directory.

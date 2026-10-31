@@ -19,15 +19,15 @@ from typing import Optional
 import typer
 
 app = typer.Typer(
-    name="bro",
-    help="Bro Vault — hide and unhide folders so they leave no visible trace.",
+    name="hider",
+    help="File vault — hide folders so they leave no visible trace.",
     add_completion=False,
 )
 
 MAX_ATTEMPTS = 5
 
 
-def _prompt_passphrase(prompt: str = "Enter secret key, bro") -> str:
+def _prompt_passphrase(prompt: str = "Passphrase") -> str:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             pw = getpass.getpass(f"{prompt}: ")
@@ -37,20 +37,20 @@ def _prompt_passphrase(prompt: str = "Enter secret key, bro") -> str:
             return pw
         remaining = MAX_ATTEMPTS - attempt
         if remaining:
-            print(f"Key cannot be empty, bro. {remaining} attempt(s) left.")
+            print(f"Passphrase cannot be empty.  {remaining} attempt(s) left.")
     raise typer.Exit(1)
 
 
 def _prompt_passphrase_confirm() -> str:
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        pw1 = getpass.getpass("Enter new secret key, bro: ")
-        pw2 = getpass.getpass("Confirm new secret key, bro: ")
+        pw1 = getpass.getpass("New passphrase: ")
+        pw2 = getpass.getpass("Confirm passphrase: ")
         if pw1 == pw2 and pw1:
             return pw1
         if pw1 != pw2:
-            print("Keys do not match, bro. Try again.")
+            print("Passphrases do not match.  Try again.")
         else:
-            print("Key cannot be empty, bro.")
+            print("Passphrase cannot be empty.")
     raise typer.Exit(1)
 
 
@@ -65,14 +65,14 @@ def hide(
     from .vault     import hide as _hide
 
     if not folder.exists():
-        typer.echo(f"Error: '{folder}' does not exist, bro.", err=True)
+        typer.echo(f"Error: '{folder}' does not exist.", err=True)
         raise typer.Exit(1)
     if not folder.is_dir():
-        typer.echo(f"Error: '{folder}' is not a folder, bro.", err=True)
+        typer.echo(f"Error: '{folder}' is not a folder.", err=True)
         raise typer.Exit(1)
 
     def _passphrase_fn() -> str:
-        typer.echo("First run: set your secret key to protect your vaults, bro:")
+        typer.echo("First use: set a passphrase to protect your vaults.")
         pw = _prompt_passphrase_confirm()
         from .state import add_to_user_path
         add_to_user_path()
@@ -80,7 +80,7 @@ def hide(
 
     try:
         _hide(folder, _passphrase_fn)
-        typer.echo("[+] Locked and vanished, bro! Zero traces left on disk.")
+        typer.echo("Done. Folder locked and hidden.")
     except PreflightError as exc:
         typer.echo(f"Cannot hide: {exc}", err=True)
         raise typer.Exit(1)
@@ -100,16 +100,16 @@ def unhide(
     from .vault import unhide as _unhide
 
     if not has_keypair():
-        typer.echo("No hidden vaults found, bro (no key in state dir).", err=True)
+        typer.echo("No hidden vaults found (no key material in state dir).", err=True)
         raise typer.Exit(1)
 
     passphrase = _prompt_passphrase()
     try:
         count = _unhide(passphrase, text_filter=text)
         if count == 0:
-            typer.echo("Nothing to restore, bro.")
+            typer.echo("Nothing to restore.")
         else:
-            typer.echo(f"[+] All done, bro! {count} vault(s) restored.")
+            typer.echo(f"Done. Restored {count} vault(s).")
     except Exception as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1)
@@ -124,7 +124,7 @@ def list_cmd() -> None:
     from .vault import list_vaults_cmd
 
     if not has_keypair():
-        typer.echo("No hidden vaults found, bro.", err=True)
+        typer.echo("No hidden vaults found.", err=True)
         raise typer.Exit(1)
 
     passphrase = _prompt_passphrase()
@@ -153,20 +153,19 @@ def recover() -> None:
         raise typer.Exit(1)
 
 
-# ── change-key / change-passphrase ──────────────────────────────────────────
+# ── change-passphrase ─────────────────────────────────────────────────────────
 
-@app.command(name="change-key")
 @app.command(name="change-passphrase")
 def change_passphrase() -> None:
-    """Re-encrypt the private key and update all vault manifests with a new passphrase / key."""
+    """Re-encrypt the private key and update all vault manifests with a new passphrase."""
     from .state import has_keypair
     from .vault import change_passphrase as _change_pp
 
     if not has_keypair():
-        typer.echo("No key material found, bro. Run 'bro hide <folder>' first.", err=True)
+        typer.echo("No key material found. Run 'hider hide <folder>' first.", err=True)
         raise typer.Exit(1)
 
-    old_pw = _prompt_passphrase("Current secret key, bro")
+    old_pw = _prompt_passphrase("Current passphrase")
     new_pw = _prompt_passphrase_confirm()
     try:
         _change_pp(old_pw, new_pw)

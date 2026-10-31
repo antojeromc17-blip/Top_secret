@@ -370,7 +370,7 @@ def _do_unhide(
 
     vaults = list_vaults(pubkey_raw, privkey_raw)
     if not vaults:
-        print("No hidden vaults found, bro.")
+        print("No hidden vaults found.")
         return 0
 
     # Decrypt each manifest to get original folder name
@@ -397,7 +397,7 @@ def _do_unhide(
         candidates.append((entry, root_node, src_path, vault_root, guid))
 
     if not candidates:
-        print("No matching vaults found, bro.")
+        print("No matching vaults found.")
         return 0
 
     # Menu if multiple
@@ -519,7 +519,7 @@ def _restore_vault(
     # Step 5k: delete unhide journal
     delete_unhide_journal(vault_root, guid)
 
-    print(f"[+] Restored: {dest}, bro!")
+    print(f"Restored: {dest}")
 
 
 # ─────────────────────────────── LIST ────────────────────────────────────────
@@ -534,7 +534,7 @@ def list_vaults_cmd(passphrase: str) -> None:
 
     vaults = list_vaults(pubkey_raw, privkey_raw)
     if not vaults:
-        print("No hidden vaults found, bro.")
+        print("No hidden vaults.")
         return
 
     print(f"\n{'GUID':36}  {'Folder':20}  {'Files':>7}  Hidden at")
@@ -615,7 +615,7 @@ def recover_cmd(passphrase: str) -> None:
                         pass
 
     if not candidates:
-        print("No readable vaults found, bro.")
+        print("No readable vaults found.")
         return
 
     print(f"\n{'#':>3}  {'Folder':25}  Files  Hidden at")
@@ -722,5 +722,5 @@ def change_passphrase(old_passphrase: str, new_passphrase: str) -> None:
     finally:
         release_mutex()
 
-    print("[+] Secret key updated successfully, bro! All vaults re-locked.")
+    print("Passphrase changed successfully.")
 
