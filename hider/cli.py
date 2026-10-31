@@ -197,12 +197,13 @@ def install_cmd() -> None:
         add_to_user_path()
         typer.echo("Successfully deployed to system runtime directory.")
         typer.echo("Stealth PATH registered. 'hider' is now available from any terminal.")
-        hide_repo = typer.confirm("Would you like to hide this downloaded directory from Explorer?", default=True)
+        hide_repo = typer.confirm("Would you like to hide this downloaded directory from Explorer?", default=False)
         if hide_repo:
             repo_root = Path.cwd().resolve()
             from .attrs import set_hidden_system
             set_hidden_system(repo_root)
             typer.echo("Downloaded folder is now hidden with System+Hidden attributes.")
+            typer.echo(f"To show it again anytime, run: attrib -h -s \"{repo_root}\"")
     except Exception as exc:
         typer.echo(f"Error: {_format_error(exc)}", err=True)
         raise typer.Exit(1)
