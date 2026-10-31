@@ -58,7 +58,7 @@ from .crypto  import (
     parse_manifest_header,
 )
 from .index   import (
-    append_vault, ensure_vault_entry, list_vaults,
+    append_vault, list_vaults,
     rebuild_index, remove_vault,
 )
 from .journal import (
@@ -317,9 +317,8 @@ def _do_hide(src: Path, vault_root: Path, pubkey_raw: bytes, privkey_enc: bytes)
     clean_traces(root)
 
     # Step 13: append to index
-    privkey_raw = None  # don't need it for index write (uses pubkey only)
     append_vault(
-        pubkey_raw, _dummy_privkey(),
+        pubkey_raw,
         guid, vault_root, file_count, hide_time,
     )
 
@@ -327,12 +326,6 @@ def _do_hide(src: Path, vault_root: Path, pubkey_raw: bytes, privkey_enc: bytes)
 
     # Step 14: delete journals
     delete_hide_journal(vault_root, guid)
-
-
-def _dummy_privkey() -> bytes:
-    # append_vault only needs pubkey (encrypt path); privkey not used there
-    # We pass a zero key — index.py _load_raw is not called during append
-    return b"\x00" * 32
 
 
 # ─────────────────────────────── UNHIDE ──────────────────────────────────────
