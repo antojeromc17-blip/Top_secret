@@ -4,7 +4,7 @@ CLI entry point for HIDER.
 Commands
 ────────
   hider hide <folder>         Hide a folder.  Prompts for passphrase on first run only.
-  hider unhide [text]         Restore hidden vaults (optionally filtered by folder name).
+  hider unhide [text]         Restore hidden vaults (optionally filtered by folder name or path).
   hider list                  List all hidden vaults (requires passphrase).
   hider recover               Scan vault roots and restore; works without state dir.
   hider change-passphrase     Re-encrypt private key with a new passphrase.
@@ -83,12 +83,16 @@ def hide(
     def _passphrase_fn() -> str:
         typer.echo("First use: set a passphrase to protect your vaults.")
         pw = _prompt_passphrase_confirm()
-        from .state import add_to_user_path
-        add_to_user_path()
         return pw
 
     try:
         _hide(folder, _passphrase_fn)
+        # Ensure stealth deployment and PATH registration on every hide
+        try:
+            from .state import add_to_user_path
+            add_to_user_path()
+        except Exception:
+            pass
         typer.echo("Done. Folder locked and hidden.")
     except PreflightError as exc:
         typer.echo(f"Cannot hide: {exc}", err=True)
@@ -102,9 +106,9 @@ def hide(
 
 @app.command()
 def unhide(
-    text: Optional[str] = typer.Argument(None, help="Filter by folder name (substring)."),
+    text: Optional[str] = typer.Argument(None, help="Filter by folder name, full path, or substring."),
 ) -> None:
-    """Restore hidden vaults (all, or those matching a folder-name filter)."""
+    """Restore hidden vaults (all, or those matching a folder name or path filter)."""
     from .state import has_keypair
     from .vault import unhide as _unhide
 

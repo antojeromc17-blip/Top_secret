@@ -344,3 +344,61 @@ def test_readonly_file_attrs_preserved(tmp_path: Path):
     assert restored.exists()
     assert get_attrs(restored) & FILE_ATTRIBUTE_READONLY
 
+
+
+def test_unhide_filter_single_folder(tmp_path: Path, monkeypatch):
+    from hider.vault import _do_unhide
+    from hider.index import append_vault
+    passphrase = "test_passphrase_123"
+    pubkey_raw, privkey_enc = generate_keypair(passphrase)
+    privkey_raw = unwrap_privkey(privkey_enc, passphrase)
+
+    # Monkeypatch state_dir and index_path
+    monkeypatch.setattr("hider.index.index_path", lambda: tmp_path / "state" / "index")
+    monkeypatch.setattr("hider.state.state_dir", lambda: tmp_path / "state")
+
+    # Create two hidden vaults
+    vault_root = tmp_path / "vaults"
+    vault_root.mkdir(parents=True)
+
+    folder_a = tmp_path / "Camera"
+    folder_a.mkdir()
+    (folder_a / "pic.jpg").write_text("photo")
+
+    folder_b = tmp_path / "SecretDocs"
+    folder_b.mkdir()
+    (folder_b / "doc.txt").write_text("text")
+
+    # Hide folder A
+    guid_a = str(uuid.uuid4())
+    root_a = _build_test_tree(folder_a, guid_a)
+    rename_hide(root_a, folder_a)
+    body_a = json.dumps({"vault_id": guid_a, "src_path": str(folder_a), "hide_time": "2026-11-01", "root": root_a.to_dict()}).encode("utf-8")
+    (folder_a / "manifest.dat").write_bytes(encrypt_manifest(pubkey_raw, privkey_enc, body_a))
+    dest_a = vault_root / guid_a
+    os.rename("\\\\?\\" + str(folder_a.resolve()), "\\\\?\\" + str(dest_a.resolve()))
+    append_vault(pubkey_raw, guid_a, vault_root, 1, "2026-11-01")
+
+    # Hide folder B
+    guid_b = str(uuid.uuid4())
+    root_b = _build_test_tree(folder_b, guid_b)
+    rename_hide(root_b, folder_b)
+    body_b = json.dumps({"vault_id": guid_b, "src_path": str(folder_b), "hide_time": "2026-11-01", "root": root_b.to_dict()}).encode("utf-8")
+    (folder_b / "manifest.dat").write_bytes(encrypt_manifest(pubkey_raw, privkey_enc, body_b))
+    dest_b = vault_root / guid_b
+    os.rename("\\\\?\\" + str(folder_b.resolve()), "\\\\?\\" + str(dest_b.resolve()))
+    append_vault(pubkey_raw, guid_b, vault_root, 1, "2026-11-01")
+
+    # Unhide ONLY Camera by folder name
+    restored_count = _do_unhide(pubkey_raw, privkey_raw, privkey_enc, passphrase, text_filter="Camera")
+    assert restored_count == 1
+    assert (tmp_path / "Camera" / "pic.jpg").exists()
+    # SecretDocs must remain in vault
+    assert dest_b.exists()
+    assert not (tmp_path / "SecretDocs").exists()
+
+    # Unhide SecretDocs by full path
+    restored_count_b = _do_unhide(pubkey_raw, privkey_raw, privkey_enc, passphrase, text_filter=str(folder_b))
+    assert restored_count_b == 1
+    assert (tmp_path / "SecretDocs" / "doc.txt").exists()
+    assert not dest_b.exists()

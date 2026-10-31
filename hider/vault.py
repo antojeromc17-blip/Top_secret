@@ -23,7 +23,7 @@ Unhide order
 ────────────
  1. recover_all          — silent DPAPI recovery
  2. prompt passphrase    — unwrap private key
- 3. decrypt all manifests
+ 3. decrypt all manifests (with temporary deny ACL removal)
  4. filter / menu
  5. for each vault:
     a. write unhide journal at vault_root level (fix C2)
@@ -87,6 +87,14 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _is_guid(name: str) -> bool:
+    try:
+        uuid.UUID(name)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
 # ─────────────────────────── Setup / keypair ──────────────────────────────────
 
 def _scan_for_existing_keypair(passphrase: str) -> tuple[bytes, bytes] | None:
@@ -94,29 +102,42 @@ def _scan_for_existing_keypair(passphrase: str) -> tuple[bytes, bytes] | None:
     Scan all vault roots for an existing manifest header.
     If found, attempt to unwrap privkey_enc using *passphrase*.
     Returns (pubkey_raw, privkey_enc) on success, None if not found.
-    (Fix from §7: reuse keypair instead of generating a new one.)
     """
     from .state import vault_roots
-    from cryptography.exceptions import InvalidSignature
-    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+    sid = None
+    try:
+        sid = current_user_sid()
+    except Exception:
+        pass
 
     for vault_root in vault_roots():
-        if not vault_root.exists():    # fix L6: guard iterdir()
+        if not vault_root.exists():
             continue
         for guid_dir in vault_root.iterdir():
-            if not guid_dir.is_dir():
+            if not guid_dir.is_dir() or not _is_guid(guid_dir.name):
                 continue
             mf = guid_dir / MANIFEST_NAME
-            if not mf.exists():
-                continue
+            if sid:
+                try:
+                    remove_deny(guid_dir, sid)
+                except Exception:
+                    pass
             try:
+                if not mf.exists():
+                    continue
                 data = mf.read_bytes()
                 pubkey_raw, privkey_enc, _ = parse_manifest_header(data)
-                # Try to unwrap — raises on wrong passphrase
                 unwrap_privkey(privkey_enc, passphrase)
                 return pubkey_raw, privkey_enc
             except Exception:
                 continue
+            finally:
+                if sid:
+                    try:
+                        apply_deny(guid_dir, sid)
+                    except Exception:
+                        pass
     return None
 
 
@@ -147,21 +168,32 @@ def ensure_keypair(passphrase: str) -> tuple[bytes, bytes]:
 def _rebuild_index_from_vaults(pubkey_raw: bytes, privkey_raw: bytes, passphrase: str) -> None:
     """Scan all vault roots; rebuild the encrypted index from manifest headers."""
     from .state import vault_roots
+    sid = None
+    try:
+        sid = current_user_sid()
+    except Exception:
+        pass
+
     entries = []
     for vault_root in vault_roots():
         if not vault_root.exists():
             continue
         for guid_dir in vault_root.iterdir():
-            if not guid_dir.is_dir():
+            if not guid_dir.is_dir() or not _is_guid(guid_dir.name):
                 continue
             mf = guid_dir / MANIFEST_NAME
-            if not mf.exists():
-                continue
+            if sid:
+                try:
+                    remove_deny(guid_dir, sid)
+                except Exception:
+                    pass
             try:
-                data      = mf.read_bytes()
+                if not mf.exists():
+                    continue
+                data         = mf.read_bytes()
                 body_json, _ = decrypt_manifest(data, passphrase)
-                body      = json.loads(body_json)
-                root_node = Node.from_dict(body["root"])
+                body         = json.loads(body_json)
+                root_node    = Node.from_dict(body["root"])
                 entries.append({
                     "vault_id":   body["vault_id"],
                     "vault_root": str(vault_root),
@@ -170,6 +202,12 @@ def _rebuild_index_from_vaults(pubkey_raw: bytes, privkey_raw: bytes, passphrase
                 })
             except Exception:
                 continue
+            finally:
+                if sid:
+                    try:
+                        apply_deny(guid_dir, sid)
+                    except Exception:
+                        pass
     rebuild_index(pubkey_raw, privkey_raw, entries)
 
 
@@ -232,7 +270,7 @@ def _do_hide(src: Path, vault_root: Path, pubkey_raw: bytes, privkey_enc: bytes)
     def _name_gen() -> str:
         return str(uuid.uuid4())
 
-    root = build_tree(src, guild := guid, _name_gen, _get_attrs, _EXCLUDE)
+    root = build_tree(src, guid, _name_gen, _get_attrs, _EXCLUDE)
 
     file_count = _count_nodes(root)
     hide_time  = _now_iso()
@@ -332,7 +370,7 @@ def _do_hide(src: Path, vault_root: Path, pubkey_raw: bytes, privkey_enc: bytes)
 
 def unhide(passphrase: str, text_filter: str | None = None) -> int:
     """
-    Unhide all vaults (or those matching *text_filter* in their folder name).
+    Unhide all vaults (or those matching *text_filter* in their folder name or path).
     Returns the number of vaults restored.
     """
     from .state import vault_roots as _vault_roots
@@ -366,6 +404,12 @@ def _do_unhide(
         print("No hidden vaults found.")
         return 0
 
+    sid = None
+    try:
+        sid = current_user_sid()
+    except Exception:
+        pass
+
     # Decrypt each manifest to get original folder name
     candidates = []
     for entry in vaults:
@@ -373,19 +417,51 @@ def _do_unhide(
         guid       = entry["vault_id"]
         guid_dir   = vault_root / guid
         mf         = guid_dir / MANIFEST_NAME
-        if not mf.exists():
-            continue
+
+        if sid:
+            try:
+                remove_deny(guid_dir, sid)
+            except Exception:
+                pass
+
         try:
+            if not mf.exists():
+                if sid:
+                    try:
+                        apply_deny(guid_dir, sid)
+                    except Exception:
+                        pass
+                continue
             body_json, _ = decrypt_manifest(mf.read_bytes(), passphrase)
             body         = json.loads(body_json)
             root_node    = Node.from_dict(body["root"])
             src_path     = Path(body["src_path"])
             folder_name  = src_path.name
         except Exception:
+            if sid:
+                try:
+                    apply_deny(guid_dir, sid)
+                except Exception:
+                    pass
             continue
 
-        if text_filter and text_filter.lower() not in folder_name.lower():
-            continue
+        if text_filter:
+            tf = text_filter.strip().rstrip("\\/").lower()
+            tf_name = Path(text_filter).name.lower()
+            matches = (
+                tf == folder_name.lower()
+                or tf in folder_name.lower()
+                or tf_name in folder_name.lower()
+                or tf in str(src_path).lower()
+                or folder_name.lower() in tf
+            )
+            if not matches:
+                if sid:
+                    try:
+                        apply_deny(guid_dir, sid)
+                    except Exception:
+                        pass
+                continue
 
         candidates.append((entry, root_node, src_path, vault_root, guid))
 
@@ -398,18 +474,41 @@ def _do_unhide(
         print("\nMatching vaults:")
         for i, (entry, _, src_path, _, _) in enumerate(candidates):
             print(f"  [{i+1}] {src_path.name}  ({entry['file_count']} files, hidden {entry['hide_time']})")
-        choice = input("\nRestore which? [number / 'all']: ").strip().lower()
+        choice = input("\nRestore which? [number / 'all' / Enter to cancel]: ").strip().lower()
         if choice == "all":
             selected = candidates
+        elif not choice:
+            if sid:
+                for _, _, _, vault_root, guid in candidates:
+                    try:
+                        apply_deny(vault_root / guid, sid)
+                    except Exception:
+                        pass
+            return 0
         else:
             try:
                 idx = int(choice) - 1
                 selected = [candidates[idx]]
             except (ValueError, IndexError):
                 print("Invalid choice.")
+                if sid:
+                    for _, _, _, vault_root, guid in candidates:
+                        try:
+                            apply_deny(vault_root / guid, sid)
+                        except Exception:
+                            pass
                 return 0
     else:
         selected = candidates
+
+    # Re-apply deny on any candidates NOT selected for restore
+    if sid:
+        for c in candidates:
+            if c not in selected:
+                try:
+                    apply_deny(c[3] / c[4], sid)
+                except Exception:
+                    pass
 
     count = 0
     for entry, root_node, src_path, vault_root, guid in selected:
@@ -580,7 +679,7 @@ def recover_cmd(passphrase: str) -> None:
         if not vault_root.exists():
             continue
         for guid_dir in vault_root.iterdir():
-            if not guid_dir.is_dir():
+            if not guid_dir.is_dir() or not _is_guid(guid_dir.name):
                 continue
             mf = guid_dir / MANIFEST_NAME
 
@@ -678,7 +777,7 @@ def change_passphrase(old_passphrase: str, new_passphrase: str) -> None:
             if not vault_root.exists():
                 continue
             for guid_dir in vault_root.iterdir():
-                if not guid_dir.is_dir():
+                if not guid_dir.is_dir() or not _is_guid(guid_dir.name):
                     continue
                 mf = guid_dir / MANIFEST_NAME
                 if not mf.exists():
@@ -710,4 +809,3 @@ def change_passphrase(old_passphrase: str, new_passphrase: str) -> None:
         release_mutex()
 
     print("Passphrase changed successfully.")
-
