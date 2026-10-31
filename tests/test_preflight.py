@@ -63,25 +63,58 @@ def test_locked_dir_detected(tmp_path: Path):
         _k32.CloseHandle(h)
 
 
-# ── Reparse point ─────────────────────────────────────────────────────────────
+# ── Reparse point & Cloud placeholder ─────────────────────────────────────────
 
-def test_reparse_point_aborts(tmp_path: Path):
-    """A symlink inside the folder must trigger PreflightError before any change."""
+def test_reparse_point_aborts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A reparse point inside the folder must trigger PreflightError before any change."""
     src  = tmp_path / "src"
     src.mkdir()
-    # Create a symlink inside src (requires SeCreateSymbolicLinkPrivilege or developer mode)
+    target_file = tmp_path / "target.txt"
+    target_file.write_text("target")
     link = src / "link.txt"
+
+    # Attempt to create a real symlink; if Windows restricts symlink creation,
+    # create a normal file and mock its attribute check to return FILE_ATTRIBUTE_REPARSE_POINT
     try:
-        link.symlink_to(tmp_path / "target.txt")
-    except (OSError, NotImplementedError):
-        pytest.skip("Symlink creation requires developer mode or elevated rights")
+        link.symlink_to(target_file)
+    except (OSError, NotImplementedError, PermissionError):
+        link.write_text("pretend symlink")
+        from hider.wintypes_ext import FILE_ATTRIBUTE_REPARSE_POINT
+        import hider.preflight as pf
+        orig_get_attrs = pf._get_attrs
+        monkeypatch.setattr(
+            pf, "_get_attrs",
+            lambda p: FILE_ATTRIBUTE_REPARSE_POINT if p.name == "link.txt" else orig_get_attrs(p)
+        )
 
     vault_root = tmp_path / "vault"
     vault_root.mkdir()
     with pytest.raises(PreflightError, match="[Rr]eparse"):
         preflight(src, vault_root)
-    # Ensure nothing in src was renamed
+    # Ensure nothing in src was renamed or modified
     assert link.exists()
+
+
+def test_cloud_placeholder_aborts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """A cloud placeholder (recall attributes) must trigger PreflightError before any change."""
+    src = tmp_path / "cloud_src"
+    src.mkdir()
+    placeholder = src / "onedrive_placeholder.docx"
+    placeholder.write_text("placeholder")
+
+    from hider.wintypes_ext import FILE_ATTRIBUTE_RECALL_ON_OPEN
+    import hider.preflight as pf
+    orig_get_attrs = pf._get_attrs
+    monkeypatch.setattr(
+        pf, "_get_attrs",
+        lambda p: FILE_ATTRIBUTE_RECALL_ON_OPEN if p.name == "onedrive_placeholder.docx" else orig_get_attrs(p)
+    )
+
+    vault_root = tmp_path / "vault"
+    vault_root.mkdir()
+    with pytest.raises(PreflightError, match="[Cc]loud"):
+        preflight(src, vault_root)
+    assert placeholder.exists()
 
 
 # ── Cross-drive ───────────────────────────────────────────────────────────────
