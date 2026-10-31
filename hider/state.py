@@ -181,9 +181,7 @@ def install_stealth() -> Path:
 
         # Copy hider package
         dst_pkg = target / "hider"
-        if dst_pkg.exists():
-            shutil.rmtree(dst_pkg, ignore_errors=True)
-        shutil.copytree(pkg_src, dst_pkg)
+        shutil.copytree(pkg_src, dst_pkg, dirs_exist_ok=True)
 
         # Copy launcher scripts and main.py
         for name in ("main.py", "hider.cmd", "hider.bat", "hider.ps1"):
