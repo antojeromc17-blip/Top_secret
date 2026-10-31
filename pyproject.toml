@@ -22,4 +22,5 @@ dev = [
 
 [project.scripts]
 hider = "hider.cli:app"
+bro = "hider.cli:app"
 

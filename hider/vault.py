@@ -237,6 +237,18 @@ def _do_hide(src: Path, vault_root: Path, pubkey_raw: bytes, privkey_enc: bytes)
     file_count = _count_nodes(root)
     hide_time  = _now_iso()
 
+    # Display what files and folders are being disguised as
+    print(f"\nHiding folder '{src.name}' -> [{guid}]")
+    print("Files disguised as:")
+    def _print_mappings(node: Node, indent="  "):
+        for child in node.children:
+            type_label = "[DIR] " if child.is_dir else "[FILE]"
+            print(f"{indent}{type_label} {child.original_name}  ->  {child.random_name}")
+            if child.is_dir:
+                _print_mappings(child, indent + "    ")
+    _print_mappings(root)
+    print()
+
     # Step 5: write DPAPI journal (at vault_root level)
     write_hide_journal(vault_root, guid, src, root)
 

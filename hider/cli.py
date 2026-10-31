@@ -19,8 +19,8 @@ from typing import Optional
 import typer
 
 app = typer.Typer(
-    name="hider",
-    help="File vault — hide folders so they leave no visible trace.",
+    name="bro",
+    help="Bro Vault — hide and unhide folders so they leave no visible trace.",
     add_completion=False,
 )
 
@@ -151,11 +151,12 @@ def recover() -> None:
         raise typer.Exit(1)
 
 
-# ── change-passphrase ─────────────────────────────────────────────────────────
+# ── change-key / change-passphrase ──────────────────────────────────────────
 
+@app.command(name="change-key")
 @app.command(name="change-passphrase")
 def change_passphrase() -> None:
-    """Re-encrypt the private key and update all vault manifests with a new passphrase."""
+    """Re-encrypt the private key and update all vault manifests with a new passphrase / key."""
     from .state import has_keypair
     from .vault import change_passphrase as _change_pp
 
