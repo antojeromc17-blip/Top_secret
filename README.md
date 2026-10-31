@@ -1,56 +1,118 @@
-# HIDER
+# HIDER (bro)
 
 HIDER is a Windows utility that hides folders so they leave no visible trace, directions, or plaintext metadata on disk.
 
-## Security & Architectural Design
+---
 
-1. **Key Model**:
-   - At first run (`hider hide <folder>`), HIDER generates an X25519 keypair.
-   - The public key is stored in the local state directory (`%LOCALAPPDATA%\Microsoft\CLR_v4.0\UsageLogs`).
-   - The private key is encrypted using `scrypt` (memory-hard KDF) + `AES-256-GCM` with a user passphrase.
-   - `hide` uses the public key (ECIES: X25519 + HKDF-SHA256 + AES-256-GCM) and **never prompts for a passphrase** after initial setup.
-   - `unhide`, `list`, `recover`, and `change-passphrase` prompt for the passphrase to decrypt.
+## Prerequisites & Dependencies
 
-2. **No Plaintext Leaks**:
-   - All filenames and folder names inside hidden vaults are randomized to UUIDs.
-   - Original directory structure and filenames are encrypted inside `manifest.dat` using ECIES with the plaintext header bound as AAD.
-   - Plaintext manifest headers contain an encrypted copy of the private key (`privkey_enc`), allowing full vault recovery even if `%LOCALAPPDATA%` is wiped.
-   - The index stores no plaintext original paths.
+### Operating System & Environment
+- **OS**: Windows 10 or Windows 11 (NTFS volume recommended for full ACL protection)
+- **Python**: Version `3.11` or newer (tested on Python 3.11, 3.12, 3.13)
 
-3. **Crash Safety & Idempotent Journal**:
-   - Interrupted hides and unhides are recorded in a DPAPI-protected journal (`journal-<GUID>.dat`) at the vault root level.
-   - Separate `.state` file tracks phases (`start`, `renames`, `moved`, `attrs`, `acl`, `index`, `done`).
-   - Silent auto-recovery probes which files exist and resumes or rolls back safely at the beginning of every command without requiring a passphrase.
+### Dependencies Breakdown
 
-4. **Stealth & Permissions**:
-   - Vault roots: `%LOCALAPPDATA%\Microsoft\CLR_v4.0\UsageLogs` on the system drive and `<Drive>:\$WinREAgent` on other drives.
-   - Marked `Hidden | System` and `NOT_CONTENT_INDEXED`.
-   - Deny ACL (`(RX,W,D,DC)`) applied to top-level vault folder only (no `(OI)(CI)` inheritance overhead). Skipped on non-NTFS volumes.
-   - Trace cleanup automatically purges matching Recent `.lnk` files and thumbnail caches.
+| Component | Package | Version | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Runtime** | `cryptography` | `>=42.0.0` | X25519 ECIES, AES-256-GCM, HKDF, and Scrypt KDF |
+| **Runtime** | `typer` | `>=0.12.0` | CLI command-line interface & argument parsing |
+| **Testing** | `pytest` | `>=8.0.0` | Automated test runner (unit & integration tests) |
+| **Testing** | `pytest-timeout` | `>=2.3.0` | Prevents test hangs on lock or concurrency checks |
+| **Build** | `pyinstaller` | `>=6.0.0` | Compiles the standalone `.exe` and onedir release bundle |
+| **OS APIs** | Standard Windows DLLs | Built-in | `kernel32`, `advapi32`, `crypt32`, `user32`, `shell32` (via Python `ctypes`) |
 
-## Usage
+> **Note:** No external C/C++ compiler or Windows SDK is required. All Win32 APIs (DPAPI, ACLs, file locks, long paths) are invoked directly through Python's standard `ctypes` library with fully typed signatures.
 
-```bash
-# Hide a directory (asks for passphrase on very first run to initialize keys)
-hider hide "C:\Users\Username\SecretFolder"
+---
 
-# Unhide vaults (prompts for passphrase; optionally filter by folder name)
-hider unhide
-hider unhide SecretFolder
+## Quick Start: Virtual Environment Setup
 
-# List all hidden vaults with decrypted folder names
-hider list
+### 1. Create and Activate a Virtual Environment
 
-# Recover vaults after index or profile wipe
-hider recover
+Open PowerShell in the project directory:
 
-# Change the encryption passphrase across all vaults
-hider change-passphrase
+```powershell
+# Create a fresh virtual environment
+python -m venv .venv
+
+# Activate the virtual environment
+.\.venv\Scripts\Activate.ps1
 ```
 
-## Running Tests
+*(If PowerShell blocks script execution, run `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass` first).*
 
-```bash
-pytest --tb=short -q
+### 2. Install Dependencies
+
+You can install dependencies using either method:
+
+#### Option A: Using `requirements-dev.txt` (Recommended)
+```powershell
+pip install -r requirements-dev.txt
 ```
 
+#### Option B: Using `pyproject.toml`
+```powershell
+pip install -e ".[dev]"
+```
+
+*(For minimal runtime only without tests/compiler: `pip install -r requirements.txt`)*
+
+---
+
+## Running the Automated Test Suite
+
+To run all 53 automated tests:
+
+```powershell
+pytest --tb=short -v
+```
+
+The test suite covers:
+- **Crypto & ECIES**: Round-trip encryption, AAD integrity validation, version byte checking, tampering detection.
+- **Attributes**: Read-modify-write preservation of archive, read-only, and system flags, plus `NOT_CONTENT_INDEXED`.
+- **Preflight & Locks**: Sharing violations (DELETE access with `FILE_SHARE_ALL`), OneDrive/cloud recall attribute detection, reparse point detection.
+- **Vault Operations**: Round-trip hiding/unhiding, verifying zero `IMG_` or `.jpg` plaintext leaks on disk, `\\?\` long paths (>260 characters), Unicode & CJK filenames, empty folders, and restored-name collision fallbacks.
+- **ACLs**: Validating that deny ACE is applied only to the vault folder without child inheritance, plus non-NTFS volume handling.
+- **Crash Recovery**: Idempotent DPAPI journal rollback during renames, recovery after folder move, recovery with missing index, and recovery after state directory deletion.
+- **Trace Cleanup**: Automated removal of matching `.lnk` shortcuts in Recent and jump lists in `AutomaticDestinations` / `CustomDestinations`.
+
+---
+
+## Usage Commands
+
+Once installed or running from this folder, you can use the `bro` command:
+
+```powershell
+# 1. Hide a folder (asks for passphrase once on initial run):
+bro hide "C:\Users\Username\Desktop\MySecretPhotos"
+
+# 2. Unhide vaults (restores original folder name, files, and attributes):
+bro unhide
+# Or unhide a specific folder matching text:
+bro unhide MySecretPhotos
+
+# 3. List all currently hidden vaults:
+bro list
+
+# 4. Change secret key / passphrase across all vaults:
+bro change-key
+
+# 5. Emergency recover (scans drives even if local app data was wiped):
+bro recover
+```
+
+---
+
+## Building Standalone Binaries (PyInstaller)
+
+To compile self-contained Windows distributions:
+
+```powershell
+# Build onedir release (recommended — faster startup, minimal AV false positives):
+pyinstaller --onedir --name bro main.py
+
+# Build single-file executable:
+pyinstaller --onefile --name bro_onefile main.py
+```
+
+Outputs will be placed in the `dist/` directory.
