@@ -1,0 +1,48 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  EXE_NAME: hider
+
+jobs:
+  test-and-build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest --tb=short -q
+
+      - name: Build --onedir (default)
+        run: pyinstaller --onedir --name ${{ env.EXE_NAME }} main.py
+
+      - name: Build --onefile (alternate)
+        run: pyinstaller --onefile --name ${{ env.EXE_NAME }}_onefile main.py
+
+      - name: Zip --onedir output
+        run: Compress-Archive -Path dist/${{ env.EXE_NAME }} -DestinationPath dist/${{ env.EXE_NAME }}-windows-onedir.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/${{ env.EXE_NAME }}-windows-onedir.zip
+            dist/${{ env.EXE_NAME }}_onefile.exe
+          body: |
+            ### Downloads
+            - **Default (Recommended):** `${{ env.EXE_NAME }}-windows-onedir.zip` — Faster startup, lower antivirus false-positive rate.
+            - **Alternate:** `${{ env.EXE_NAME }}_onefile.exe` — Single standalone binary (may trigger heuristic warnings in some antivirus tools).
+
